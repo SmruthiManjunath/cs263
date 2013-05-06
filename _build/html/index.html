@@ -1,0 +1,273 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Welcome to Python VM Internals Tutorial’s documentation! &mdash; Python VM Internals Tutorials 1.0.0 documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '1.0.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="Python VM Internals Tutorials 1.0.0 documentation" href="#" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li><a href="#">Python VM Internals Tutorials 1.0.0 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="welcome-to-python-vm-internals-tutorial-s-documentation">
+<h1>Welcome to Python VM Internals Tutorial&#8217;s documentation!<a class="headerlink" href="#welcome-to-python-vm-internals-tutorial-s-documentation" title="Permalink to this headline">¶</a></h1>
+<p>This is a tutorial giving an overview of Python VM including CPython, bytecodes and their meaning, .pyc files and differences between different versions of Python.</p>
+</div>
+<div class="section" id="cpython-overview">
+<h1>CPython Overview<a class="headerlink" href="#cpython-overview" title="Permalink to this headline">¶</a></h1>
+<p>Cpython is a python bytecode compiler written in C. For every bytecode in python, there are corresponding C functions that implement their functionalities. The main directories of CPython are <tt class="docutils literal"><span class="pre">Include/</span></tt>, where the header files such as object.h, python.h, etc are present,  the <tt class="docutils literal"><span class="pre">Object/</span></tt> directory that contains the implementations such as string, int, floats, etc., the <tt class="docutils literal"><span class="pre">Python/</span></tt> directory that contains the parser importer, <tt class="docutils literal"><span class="pre">Lib/</span></tt> that contains the library modules and the <tt class="docutils literal"><span class="pre">Module/</span></tt> that contains the C extension modules.</p>
+</div>
+<div class="section" id="structure-of-python-objects">
+<h1>Structure of Python Objects<a class="headerlink" href="#structure-of-python-objects" title="Permalink to this headline">¶</a></h1>
+<p>In python, everything is considered as an object, from integers, to strings, to functions and classes. So, it is very important to understand their structure.</p>
+<div class="section" id="pyobject">
+<h2>PyObject<a class="headerlink" href="#pyobject" title="Permalink to this headline">¶</a></h2>
+<p>The following is the structure of a python object defined in ./Include/object.h:PyObject</p>
+<div class="highlight-python"><pre>typedef struct _object{
+        Py_ssize_t ob_refcnt;
+        struct _typeobject* ob_type;
+}PyObject;</pre>
+</div>
+<p>This is the basic structure and it contains 2 fields <tt class="docutils literal"><span class="pre">ob_refcnt</span></tt> and <tt class="docutils literal"><span class="pre">ob_type</span></tt> that are mandatory for all the objects. All objects have references and the number of references to an object are stored in <tt class="docutils literal"><span class="pre">ob_refcnt</span></tt>. If we execute this statement on the python interpreter <tt class="docutils literal"><span class="pre">x=object()</span></tt>. The address of the memory location allocated to the object on the heap is stored in <tt class="docutils literal"><span class="pre">x</span></tt>. The reference count of object is incremented by 1 and is stored in <tt class="docutils literal"><span class="pre">ob_refcnt</span></tt> variable of the object. This will be used for garbage collection. Object type is of type <tt class="docutils literal"><span class="pre">_typeobject</span></tt>, which is again a structure that gives more details of the object such as, various functions and protocols implemented and supported by the object.</p>
+</div>
+<div class="section" id="pytypeobject">
+<h2>PyTypeObject<a class="headerlink" href="#pytypeobject" title="Permalink to this headline">¶</a></h2>
+<p>The structure <tt class="docutils literal"><span class="pre">_typeobject</span></tt> is defined below:</p>
+<div class="highlight-python"><pre>typedef struct _typeobject {
+        PyObject_VAR_HEAD
+        char *tp_name;
+        int tp_basicsize, tp_itemsize;
+        destructor tp_dealloc;
+        printfunc tp_print;
+        getattrfunc tp_getattr;
+        setattrfunc tp_setattr;
+        cmpfunc tp_compare;
+        PyNumberMethods *tp_as_number;
+        PySequenceMethods *tp_as_sequence;
+        PyMappingMethods *tp_as_mapping;
+        .
+        .
+        .
+}PyTypeObject;</pre>
+</div>
+<p><tt class="docutils literal"><span class="pre">Python_VAR_HEAD</span></tt>, corresponds to basic structure of the object and an additional field <tt class="docutils literal"><span class="pre">ob_size</span></tt> that is 0 for statically allocated type objects and has a value for dynamically allocated type objects. The next field is the <tt class="docutils literal"><span class="pre">tp_name</span></tt>, that gives the type represented by a String. There are pointers to destructors,print,  getters and setters functions. there are also, other fields such as <tt class="docutils literal"><span class="pre">tp_basicsize</span></tt> and <tt class="docutils literal"><span class="pre">tp_itemsize</span></tt>, where <tt class="docutils literal"><span class="pre">tp_basicsize</span></tt> represents the size of fixed length instances  and <tt class="docutils literal"><span class="pre">tp_itemsize</span></tt> represents the size variable length instances. The <tt class="docutils literal"><span class="pre">tp_as_number</span></tt>, <tt class="docutils literal"><span class="pre">tp_as_sequence</span></tt>, <tt class="docutils literal"><span class="pre">tp_as_mapping</span></tt> represents the protocols that are implemented by the object. This includes the functions  object supports. Each of the protocols is a pointer to another structure that has the functions that are implemented by the object type. There are other fields that an object type can contain.</p>
+</div>
+</div>
+<div class="section" id="generated-python-bytecodes-for-a-simple-python-code">
+<h1>Generated Python Bytecodes for a simple python code<a class="headerlink" href="#generated-python-bytecodes-for-a-simple-python-code" title="Permalink to this headline">¶</a></h1>
+<p>Below is a simple python program and the bytecodes generated for the same:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="c">#usr/bin python</span>
+<span class="c"># encoding: utf-8</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="k">def</span> <span class="nf">foo</span><span class="p">(</span><span class="n">a</span><span class="p">,</span><span class="n">b</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">a</span><span class="o">-</span><span class="n">b</span>
+<span class="k">print</span><span class="p">(</span><span class="n">foo</span><span class="p">(</span><span class="mi">17</span><span class="p">,</span><span class="mi">25</span><span class="p">))</span>
+</pre></div>
+</div>
+<p>Bytecode obtained</p>
+<div class="highlight-python"><pre>3           0 LOAD_CONST               0 (-1)
+            3 LOAD_CONST               1 (None)
+            6 IMPORT_NAME              0 (sys)
+            9 STORE_NAME               0 (sys)
+
+4          12 LOAD_CONST               2 (&lt;code object foo at 0x7fe405b04a30, file "bytecc.py", line 6&gt;)
+           15 MAKE_FUNCTION            0
+           18 STORE_NAME               1 (foo)
+
+6          21 LOAD_NAME                1 (foo)
+           24 LOAD_CONST               3 (17)
+           27 LOAD_CONST               4 (25)
+           30 CALL_FUNCTION            2
+           33 PRINT_ITEM
+           34 PRINT_NEWLINE
+           35 LOAD_CONST               1 (None)
+           38 RETURN_VALUE</pre>
+</div>
+<p>The first bytecode is <tt class="docutils literal"><span class="pre">LOAD_CONST</span></tt> that pushes a constant on top of stack. The constant it pushes is indexed from the co_consts array. The next line is the <tt class="docutils literal"><span class="pre">IMPORT_NAME</span></tt> that imports the module mentioned in the <tt class="docutils literal"><span class="pre">co_const[]</span></tt> array. Import calls <tt class="xref py py-func docutils literal"><span class="pre">__import__()</span></tt>  that takes 5 parameters, namely name(sys), local, global, from list (list of modules imported from a class eg:from a import a,b,c ) and level (absolute or relative). It pushes the module object on top of the stack, <tt class="docutils literal"><span class="pre">STORE_NAME</span></tt>, pops it off the top of the stack and associates the module object with name sys and stores it in the <tt class="docutils literal"><span class="pre">co_names[]</span></tt> array in index 0.</p>
+<p>The next set of bytecodes are for the function definition. <tt class="docutils literal"><span class="pre">LOAD_CONST</span></tt> is used to push the co_names[2] on top of the stack. So, it looks up co_names[] and finds foo code object in that location. The <tt class="docutils literal"><span class="pre">MAKE_FUNCTION</span></tt> pops the top of the stack and converts the code into an actual callable and pushes it on top of the stack. <tt class="docutils literal"><span class="pre">STORE_NAME</span></tt> pops it from top of the stack into the names array corresponding to foo.</p>
+<p>The last set of bytecodes that are generated represent the print statement and the nested function call. First the callable foo is pushed on top of the stack, then the positional arguments are pushed on top of the stack the <tt class="docutils literal"><span class="pre">CALL_FUNCTION</span></tt>, pops top 2 elements from the stack and puts it into a tuple and then again pops the top of the stack which now contains the callable foo, the tuple is passed to the callable, it performs the function and pushes the result value on top of the stack. This is then popped by the print bytecode, that puts it on to the stdout. This is followed by a print newline, if the print statement is not terminated by a comma.  The <tt class="docutils literal"><span class="pre">RETURN_VALUE</span></tt> bytecode pops the top of the stack and returns it to the caller.
+Lastly, the bytecode generated for the return(a-b) statement is</p>
+<div class="highlight-python"><pre>0 LOAD_FAST     0 (a)
+3 LOAD_FAST     1 (b)
+6 BINARY_SUBTRACT
+7 RETURN_VALUE</pre>
+</div>
+<p>The parameters a and b are stored in a fast array that is associated with a method where locals and arguments are stored. The <tt class="docutils literal"><span class="pre">LOAD_FAST</span></tt> pushes arguments a and b on top of the stack. <tt class="docutils literal"><span class="pre">BINARY_SUBTRACT</span></tt> pops the top two elements of the stack, performs the subtraction and pushes the result on top of the stack which is returned to the caller by <tt class="docutils literal"><span class="pre">RETURN_VALUE</span></tt> by popping the stack.</p>
+<p><tt class="docutils literal"><span class="pre">BINARY_SUBTRACT</span></tt> is implemented as follows:</p>
+<div class="highlight-python"><pre>TARGET(BINARY_SUBTRACT)
+        w = POP();
+        v = TOP();
+        x = PyNumber_Subtract(v, w);
+        Py_DECREF(v);
+        Py_DECREF(w);
+        SET_TOP(x);
+        if (x != NULL) DISPATCH();
+        break;</pre>
+</div>
+<p>The values a and b that were previously pushed on top of the stack are now popped and put into registers. <tt class="docutils literal"><span class="pre">u</span></tt>, <tt class="docutils literal"><span class="pre">v</span></tt> and <tt class="docutils literal"><span class="pre">x</span></tt> are registers. <tt class="xref py py-func docutils literal"><span class="pre">PyNumber_Subtract()</span></tt> is called and the value returned by it is put in <tt class="docutils literal"><span class="pre">x</span></tt> . The references for object in <tt class="docutils literal"><span class="pre">v</span></tt> and <tt class="docutils literal"><span class="pre">w</span></tt> are decremented and the returned value is pushed on top of the stack. If <tt class="docutils literal"><span class="pre">x</span></tt> is null that is if there was an exception or any error then it breaks out else <tt class="xref py py-func docutils literal"><span class="pre">dispatch()</span></tt> is called to execute the next instruction.</p>
+<p>The <tt class="xref py py-func docutils literal"><span class="pre">PyNumber_Subtract()</span></tt> is used to find the product of the two numbers. Since, the type of the object on which it is operating is unknown, it should be determined. This is achieved as follows, it calls another C function <tt class="xref py py-func docutils literal"><span class="pre">binary_op1()</span></tt>, which receives the <a href="#id1"><span class="problematic" id="id2">*</span></a>PyObject pointer, which it dereferences to find the type of the object (u-&gt;ob_type). Then it checks if tp_as_number protocol is implemented by it, (u-&gt;ob_type-&gt;tp_as_number) and then checks if the subtraction number is supported. If it is, it performs the subtraction and returns the value else it returns PyNot_Implemented.</p>
+</div>
+<div class="section" id="pyc-files">
+<h1>.pyc files<a class="headerlink" href="#pyc-files" title="Permalink to this headline">¶</a></h1>
+<p>The .pyc files are compiled bytecodes, their structure is very simple, it has a 4 byte magic tag and then a 4 byte modification timestamp that helps in determining whether or not the compiled bytecodes can be used for interpreting, that is, if the modification time is the same as the last time the py file was compiled, it will directly interpret the bytecodes. The rest of the file is a serialized byte stream whose format is dictated by the magic tag.</p>
+<div class="section" id="advantages-of-shipping-pyc-files-over-py-files">
+<h2>Advantages of shipping pyc files over py files:<a class="headerlink" href="#advantages-of-shipping-pyc-files-over-py-files" title="Permalink to this headline">¶</a></h2>
+<ul class="simple">
+<li>They are compact so easier to transmit over the network.</li>
+<li>Load faster as only interpretation of the bytecodes is required, compilation into bytecodes can be skipped.</li>
+<li>Provide some security, as you are not sending the source code, but it is easy to decode and get the bytecodes and know what the program is doing.</li>
+</ul>
+</div>
+<div class="section" id="disadvanatge-of-pyc-files">
+<h2>Disadvanatge of pyc files<a class="headerlink" href="#disadvanatge-of-pyc-files" title="Permalink to this headline">¶</a></h2>
+<ul class="simple">
+<li>Not compatible across python releases, as the magic tag changes, the pyc file format is different and hence not recognized by the interpreter.</li>
+</ul>
+</div>
+</div>
+<div class="section" id="differences-between-the-various-versions-of-python-are">
+<h1>Differences between the various versions of python are:<a class="headerlink" href="#differences-between-the-various-versions-of-python-are" title="Permalink to this headline">¶</a></h1>
+<p>There were a lot of changes that were made in each of the python releases, these are a few.</p>
+<div class="section" id="differences-between-python-2-6-and-2-7">
+<h2>Differences between python 2.6 and 2.7:<a class="headerlink" href="#differences-between-python-2-6-and-2-7" title="Permalink to this headline">¶</a></h2>
+<ul class="simple">
+<li>The garbage collector has been optimized for a common usage pattern where, the objects are allocated and not deallocated for a long time. The garbage collector has 3 generations, young, middle and old. The young generation is collected for every 700 allocations, the middle generation is collected for every 10 collections of the middle generation but the old generation was collected for every 10 collections of the middle generation previously. This has been modified to collecting the old generation not only for every 10 collections of the middle generation but also, when the middle generation reaches atleast 10% of the objects in the old generation. This does not happen that often as objects allocated are not deallocated that frequently. So, it is optimized for full collection.</li>
+<li>The garbage collector tries to avoid tracking simple containers such as integers and strings which can’t be part of a cycle. In Python 2.7, this is now true for tuples and dicts containing atomic types (such as ints, strings, etc.). So, they will not be tracked by the garbage collector.</li>
+<li>Long integers are now stored internally either in base 2**15 or in base 2**30, the base being determined at build time. Previously, they were always stored in base 2**15.</li>
+<li>The division algorithm for long integers has been made faster by tightening the inner loop, doing shifts instead of multiplications, and fixing an unnecessary extra iteration and the string functions such as split(), replace() methods have been optimized.</li>
+</ul>
+</div>
+<div class="section" id="difference-between-python-2-5-and-2-6">
+<h2>Difference between python 2.5 and 2.6:<a class="headerlink" href="#difference-between-python-2-5-and-2-6" title="Permalink to this headline">¶</a></h2>
+<ul class="simple">
+<li>Type objects now have a cache of methods that can reduce the work required to find the correct method implementation for a particular class; once cached, the interpreter doesn’t need to traverse base classes to figure out the right method to call</li>
+<li>Function calls that use keyword arguments are significantly faster by doing a quick pointer comparison, usually saving the time of a full string comparisons. Since, parameter names are stored as interned strings.</li>
+<li>To reduce memory usage, the garbage collector will now clear internal free lists when garbage-collecting the highest generation of objects.</li>
+</ul>
+</div>
+</div>
+<div class="section" id="references">
+<h1>References:<a class="headerlink" href="#references" title="Permalink to this headline">¶</a></h1>
+<ul class="simple">
+<li>Python Innards : <a class="reference external" href="http://www.cyberhades.com/2011/11/16/interesante-listado-de-enlaces-sobre-python/">http://www.cyberhades.com/2011/11/16/interesante-listado-de-enlaces-sobre-python/</a></li>
+<li>Stepping through CPython by Larry Hastings, PyCon 2012</li>
+<li><a class="reference external" href="http://docs.python.org/2/c-api/typeobj.html">http://docs.python.org/2/c-api/typeobj.html</a></li>
+<li><a class="reference external" href="http://docs.python.org/2/whatsnew/2.7.html">http://docs.python.org/2/whatsnew/2.7.html</a></li>
+<li><a class="reference external" href="http://docs.python.org/2/whatsnew/2.6.html">http://docs.python.org/2/whatsnew/2.6.html</a></li>
+</ul>
+<p>Contents:</p>
+<div class="toctree-wrapper compound">
+<ul class="simple">
+</ul>
+</div>
+</div>
+<div class="section" id="indices-and-tables">
+<h1>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Permalink to this headline">¶</a></h1>
+<ul class="simple">
+<li><a class="reference internal" href="genindex.html"><em>Index</em></a></li>
+<li><a class="reference internal" href="py-modindex.html"><em>Module Index</em></a></li>
+<li><a class="reference internal" href="search.html"><em>Search Page</em></a></li>
+</ul>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="#">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Welcome to Python VM Internals Tutorial&#8217;s documentation!</a></li>
+<li><a class="reference internal" href="#cpython-overview">CPython Overview</a></li>
+<li><a class="reference internal" href="#structure-of-python-objects">Structure of Python Objects</a><ul>
+<li><a class="reference internal" href="#pyobject">PyObject</a></li>
+<li><a class="reference internal" href="#pytypeobject">PyTypeObject</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#generated-python-bytecodes-for-a-simple-python-code">Generated Python Bytecodes for a simple python code</a></li>
+<li><a class="reference internal" href="#pyc-files">.pyc files</a><ul>
+<li><a class="reference internal" href="#advantages-of-shipping-pyc-files-over-py-files">Advantages of shipping pyc files over py files:</a></li>
+<li><a class="reference internal" href="#disadvanatge-of-pyc-files">Disadvanatge of pyc files</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#differences-between-the-various-versions-of-python-are">Differences between the various versions of python are:</a><ul>
+<li><a class="reference internal" href="#differences-between-python-2-6-and-2-7">Differences between python 2.6 and 2.7:</a></li>
+<li><a class="reference internal" href="#difference-between-python-2-5-and-2-6">Difference between python 2.5 and 2.6:</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#references">References:</a><ul>
+</ul>
+</li>
+<li><a class="reference internal" href="#indices-and-tables">Indices and tables</a></li>
+</ul>
+
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/index.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li><a href="#">Python VM Internals Tutorials 1.0.0 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2013, Smruthi Manjunath.
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2b1.
+    </div>
+  </body>
+</html>
